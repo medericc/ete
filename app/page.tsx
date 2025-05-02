@@ -98,13 +98,21 @@ export default function ValkyriesSchedulePage() {
           timeZone: 'Europe/Paris',
         });
   
-        // Jour du match (ex : SAMEDI 4 MAI)
-        const dayLabel = new Date(match.date).toLocaleDateString('fr-FR', {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long',
-          timeZone: 'Europe/Paris',
-        }).toUpperCase();
+    // Convertir en heure de Paris
+const dateInParis = new Date(match.date.toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
+
+// Si l'heure à Paris est < 8h, on considère que c'est la veille
+if (dateInParis.getHours() < 8) {
+  dateInParis.setDate(dateInParis.getDate() - 1);
+}
+
+// Jour du match (ex : JEUDI 2 MAI au lieu de VENDREDI 3 MAI à 4h)
+const dayLabel = dateInParis.toLocaleDateString('fr-FR', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  timeZone: 'Europe/Paris',
+}).toUpperCase();
   
         return (
           <li key={match.id}>
