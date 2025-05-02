@@ -10,7 +10,7 @@ export const metadata = {
     },
     openGraph: {
       title: "Carla Schedule",
-      description: "Les matchs de Carla.",
+      description: "Le calendrier de Carla.",
       url: "https://carla-schedule.vercel.app/",
       siteName: "Carla Schedule",
       images: [
