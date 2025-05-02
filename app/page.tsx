@@ -7,10 +7,11 @@ import { Clock } from "lucide-react";
 type Match = {
   id: string;
   date: Date;
-  opponent: string;
-  opponentLogo: string;
-  link: string; // 👈 Ajout ici
+
+  team1: { name: string; logo: string };
+  team2: { name: string; logo: string };
 };
+
 
 function formatOpponentName(name: string): string {
   const mapping: { [key: string]: string } = {
@@ -30,43 +31,59 @@ export default function ValkyriesSchedulePage() {
 
   useEffect(() => {
     const getMatches = async () => {
-      const res = await fetch(
-        `/api/proxy?url=${encodeURIComponent(
-          'https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/teams/gsv/schedule'
-        )}`
+      const teamCodes = ['gsv', 'nyl', 'phx'];
+  
+      const responses = await Promise.all(
+        teamCodes.map(code =>
+          fetch(`/api/proxy?url=${encodeURIComponent(
+            `https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/teams/${code}/schedule`
+          )}`).then(res => res.json())
+        )
       );
-
-      const data = await res.json();
-
+  
       const now = new Date();
       const nowMinus5h = new Date(now.getTime() - 5 * 60 * 60 * 1000);
-
-      const parsed = data.events
-        .filter((event: any) => new Date(event.date) > nowMinus5h)
-        .map((event: any) => {
+  
+      const seenMatchIds = new Set();
+  
+      const allMatches: Match[] = [];
+  
+      for (const data of responses) {
+        for (const event of data.events) {
           const date = new Date(event.date);
-
-          const [home, away] = event.competitions[0].competitors;
-          const isGSVHome = home.team.displayName === 'Golden State Valkyries';
-
-          const opponentTeam = isGSVHome ? away.team : home.team;
-
-          return {
+          if (date <= nowMinus5h || seenMatchIds.has(event.id)) continue;
+  
+          seenMatchIds.add(event.id);
+  
+          const [team1, team2] = event.competitions[0].competitors;
+          const t1 = team1.team;
+          const t2 = team2.team;
+  
+          allMatches.push({
             id: event.id,
             date,
-            opponent: formatOpponentName(opponentTeam.displayName),
-            opponentLogo: opponentTeam.logos?.[0]?.href ?? '',
-            link: event.links?.[0]?.href ?? '#', // 👈 Ajout ici
-          };
-          
+            team1: {
+              name: formatOpponentName(t1.displayName),
+              logo: t1.logos?.[0]?.href ?? '',
+            },
+            team2: {
+              name: formatOpponentName(t2.displayName),
+              logo: t2.logos?.[0]?.href ?? '',
+            }
           });
+        }
+      }
   
-        setMatches(parsed);
-        setLoading(false);
-      };
+      // Tri par date
+      allMatches.sort((a, b) => a.date.getTime() - b.date.getTime());
   
-      getMatches();
-    }, []);
+      setMatches(allMatches);
+      setLoading(false);
+    };
+  
+    getMatches();
+  }, []);
+  
 
   if (loading) return <p className="p-4">Les matchs arrivent.....</p>;
 
@@ -74,111 +91,64 @@ export default function ValkyriesSchedulePage() {
     <div className="max-w-2xl mx-auto p-6">
     <ul className="space-y-4">
       {matches.map((match) => {
-     const isLocal = showLocalTimes[match.id];
-
-     // Langue du navigateur
-     const browserLocale = Intl.DateTimeFormat().resolvedOptions().locale;
-     const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-     
-     // Si la langue commence par "en", on considère que c'est de l'anglais
-     const isEnglish = browserLocale.startsWith('en');
-     
-     // Langue utilisée : français par défaut, anglais seulement si langue navigateur = anglais
-     const locale = isLocal ? (isEnglish ? 'en-US' : 'fr-FR') : 'fr-FR';
-     
-     // Fuseau horaire : local si demandé, sinon Paris
-     const timeZone = isLocal ? browserTimeZone : 'Europe/Paris';
-     
-     // Format 12h si anglais US/GB
-     const use12HourFormat = ['en-US', 'en-GB'].includes(locale);
-     
-     // Libellé jour
-     const dayLabel = new Date(match.date).toLocaleDateString(locale, {
-       weekday: 'long',
-       day: 'numeric',
-       month: 'long',
-       timeZone,
-     }).toUpperCase();
-     
-      
-      // Heure formatée selon locale
-      const hourLabel = new Date(match.date).toLocaleTimeString(locale, {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: use12HourFormat,
-        timeZone,
-      });
-      
-      // Drapeau
-      const flagCode = isLocal
-        ? locale.split('-')[1]?.toLowerCase() || 'us'
-        : 'fr';
-
+        // Heure formatée en heure française
+        const hourLabel = new Date(match.date).toLocaleTimeString('fr-FR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Europe/Paris',
+        });
+  
+        // Jour du match (ex : SAMEDI 4 MAI)
+        const dayLabel = new Date(match.date).toLocaleDateString('fr-FR', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          timeZone: 'Europe/Paris',
+        }).toUpperCase();
+  
         return (
           <li key={match.id}>
             <Card className="bg-white shadow-md hover:shadow-lg transition-shadow rounded-xl">
+              {/* En-tête avec la date */}
               <CardHeader className="text-center border-b p-4">
                 <p className="text-xl font-semibold text-gray-800 tracking-wide">
                   {dayLabel}
                 </p>
               </CardHeader>
-              <CardContent className="flex items-center justify-between pl-6 pr-8 md:pl-16 md:pr-24 lg:pl-18 lg:pr-26 py-4">
-                {/* Logo + Name */}
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-md bg-white  flex items-center justify-center overflow-hidden">
-                    <img
-                      src={match.opponentLogo}
-                      alt={match.opponent}
-                      className="object-contain w-10 h-10"
-                    />
-                  </div>
-                  <p className="text-sm font-medium text-gray-900 max-w-[140px] break-words leading-tight">
-    {match.opponent}
-  </p>
-     </div>
   
-                {/* Time box */}
-                <div className="flex flex-col items-center text-sm text-gray-700 mt-1">
+              {/* Corps : logos + noms des équipes + heure */}
+              <CardContent className="flex flex-col items-center justify-center gap-3 py-4">
+                {/* Logos équipes avec "vs" */}
+                <div className="flex items-center gap-12">
                   <img
-                    src={`https://flagcdn.com/w40/${flagCode}.png`}
-                    alt={flagCode.toUpperCase()}
-                    className="w-5 h-4 mb-1"
+                    src={match.team1.logo}
+                    alt={match.team1.name}
+                    className="w-12 h-12 object-contain rounded"
                   />
-                  <div
-                    className="flex items-center gap-1 cursor-pointer"
-                    onClick={() =>
-                      setShowLocalTimes((prev) => ({
-                        ...prev,
-                        [match.id]: !prev[match.id],
-                      }))
-                    }
-                    title="Cliquez pour afficher l'heure locale"
-                  >
-                    <Clock className="w-3 h-3" />
-                   <span className="text-sm">{hourLabel}</span>
+                  <span className="text-gray-600 font-semibold">vs</span>
+                  <img
+                    src={match.team2.logo}
+                    alt={match.team2.name}
+                    className="w-12 h-12 object-contain rounded"
+                  />
+                </div>
   
-                  </div>
+           
+  
+                {/* Heure du match */}
+                <div className="flex items-center gap-1 text-sm text-gray-700 mt-1">
+                  <Clock className="w-4 h-4" />
+                  <span>{hourLabel}</span>
                 </div>
               </CardContent>
-              <CardFooter className="bg-purple-900 p-2 rounded-b-xl flex justify-center">
-    <a
-      href={match.link} // Assure-toi que match.link contient une URL valide
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-base font-semibold text-white tracking-wide hover:underline"
-    >
-      MATCH DISPONIBLE ICI
-    </a>
-  </CardFooter>
-  
-  
-  
             </Card>
           </li>
         );
       })}
     </ul>
   </div>
+  
+  
 
   );
 }
